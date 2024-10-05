@@ -1,38 +1,72 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
-import ReactEcharts from "echarts-for-react";
-import * as Realm from "realm-web"; // Realm kütüphanesini ekliyoruz
+import * as Realm from "realm-web";
+import LineChart from "./components/LineChart";
+
+const calculateMinMax = (arr) => {
+  if (!Array.isArray(arr) || arr.length === 0) {
+    return "N/A";
+  }
+  const min = Math.floor((Math.min(...arr) - 10) / 10) * 10;
+  const max = Math.ceil((Math.max(...arr) + 10) / 10) * 10;
+  return `${min}-${max}`;
+};
+
+const timeStampToHumanDate = (timeStamp) => {
+  const date = new Date(timeStamp);
+  const hours = date.getHours();
+  const minutes = "0" + date.getMinutes();
+  const seconds = "0" + date.getSeconds();
+  const day = date.toLocaleDateString();
+  const formattedTime = `${day}-${hours}:${minutes.substr(-2)}:${seconds.substr(
+    -2
+  )}`;
+  return formattedTime;
+};
+
+const transformData = (data) => {
+  const transformed = {};
+  if (data.length) {
+    transformed["saat"] = data[0]?.values.map((e) =>
+      timeStampToHumanDate(e.time)
+    );
+    data.forEach((d) => {
+      transformed[d.name] = d?.values.map((e) => e.value);
+    });
+  }
+  delete transformed["SÜRE"];
+  return transformed;
+};
 
 function App() {
-  const [currentData, setCurrentData] = useState({});
-  const [historicalData, setHistoricalData] = useState({});
-  const [error, setError] = useState(null);
-  const [user, setUser] = useState(null); // Kullanıcıyı state'e ekliyoruz
+  const [user, setUser] = useState(null);
+  const [expandedChart, setExpandedChart] = useState(null);
+  const [chartData, setChartData] = useState({});
 
-  // MongoDB API yapılandırma bilgileri
-  const appId = "data-xnlepwl"; // MongoDB Realm App ID
+  const colors = {
+    A8: "#ff9f1c",
+    A9: "#f9c159",
+    A10: "#f6e887",
+    A11: "#b0f5ba",
+    A12: "#9ceaef",
+    A13: "#d2d7e7",
+    A14: "#afbcc1",
+    A15: "#fdfdcc",
+    A16: "#e3e7e7",
+    A17: "#ffd7b5",
+    A18: "#ccd5ae",
+    A19: "#e9edc9",
+    A20: "#fefae0",
+    A21: "#faedcd",
+    A22: "#d4a373",
+    "GRS BACA": "#e4b19b",
+    SÜRE: "#ccd5ae",
+  };
+
+  const appId = "data-xnlepwl";
   const mongoDBEndpoint =
     "https://eu-central-1.aws.data.mongodb-api.com/app/data-xnlepwl/endpoint/data/v1/action/";
-  const groupNames = [
-    "A8",
-    "A9",
-    "A10",
-    "A11",
-    "A12",
-    "A13",
-    "A14",
-    "A15",
-    "A16",
-    "A17",
-    "A18",
-    "A19",
-    "A20",
-    "A21",
-    "A22",
-    "GRS BACA",
-  ];
 
-  // Kullanıcı girişi yapma fonksiyonu
   const loginEmailPassword = async (email, password) => {
     const app = new Realm.App({ id: appId });
     const credentials = Realm.Credentials.emailPassword(email, password);
@@ -43,14 +77,12 @@ function App() {
   useEffect(() => {
     const initializeUser = async () => {
       try {
-        // Kullanıcı girişini yapıp accessToken alıyoruz
         const accessToken = await loginEmailPassword(
           "hamzakaya4343@gmail.com",
           "hmzhmzky"
         );
-        setUser(accessToken); // Erişim belirtecini state'e ekliyoruz
+        setUser(accessToken);
       } catch (error) {
-        setError("Kullanıcı girişi sırasında hata oluştu.");
         console.error(error);
       }
     };
@@ -58,9 +90,8 @@ function App() {
     initializeUser();
   }, []);
 
-  // Güncel verileri çekme işlemi
   useEffect(() => {
-    if (!user) return; // Eğer kullanıcı girişi yapılmadıysa veriyi çekme
+    if (!user) return;
 
     const fetchCurrentData = async () => {
       const data = JSON.stringify({
@@ -74,124 +105,64 @@ function App() {
         url: `${mongoDBEndpoint}find`,
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${user}`, // Authorization header ile accessToken ekliyoruz
+          Authorization: `Bearer ${user}`,
         },
         data: data,
       };
 
       try {
         const response = await axios(config);
-        const transformedData = transformData(response.data.documents);
-        setCurrentData(transformedData);
+        const data = response.data.documents;
+        const sortedData = data.map((d) => {
+          const tmpData = {
+            ...d,
+            values: d.values.sort((a, b) => a.time - b.time),
+          };
+          return tmpData;
+        });
+        const transformedData = transformData(sortedData);
+        setChartData(transformedData);
       } catch (error) {
-        setError("Güncel verileri çekerken hata oluştu.");
         console.error(error);
       }
     };
 
-    // Veriyi sayfa yüklendiğinde çek ve her 5 saniyede bir güncelle
-    const interval = setInterval(fetchCurrentData, 5000);
-    fetchCurrentData(); // İlk sayfa yüklendiğinde veriyi çekmek için bu satır eklendi
-    return () => clearInterval(interval); // Bileşen kapatıldığında interval'i temizle
-  }, [user]); // user değiştiğinde (giriş yapıldığında) veriyi çek
-
-  // Geçmiş verileri çekme işlemi
-  useEffect(() => {
-    if (!user) return; // Eğer kullanıcı girişi yapılmadıysa veriyi çekme
-
-    const fetchHistoricalData = async () => {
-      const data = JSON.stringify({
-        collection: "tempV2",
-        database: "temperature_data",
-        dataSource: "Cluster0",
-      });
-
-      const config = {
-        method: "post",
-        url: `${mongoDBEndpoint}find`,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${user}`, // Authorization header ile accessToken ekliyoruz
-        },
-        data: data,
-      };
-
-      try {
-        const response = await axios(config);
-        const transformedData = transformData(response.data.documents);
-        setHistoricalData(transformedData);
-      } catch (error) {
-        setError("Geçmiş verileri çekerken hata oluştu.");
-        console.error(error);
-      }
-    };
-
-    fetchHistoricalData();
-  }, [user]); // user değiştiğinde (giriş yapıldığında) veriyi çek
-
-  // Veriyi grafiğe uygun formata dönüştürme fonksiyonu
-  const transformData = (data) => {
-    const transformed = {};
-
-    // Her grup için verileri düzenle
-    groupNames.forEach((groupName) => {
-      // Gelen veride ilgili grup ismini filtrele ve sadece bu gruba ait verileri al
-      const groupData = data.find((d) => d.name === groupName);
-
-      if (groupData) {
-        transformed[groupName] = groupData.values.map((valueObj) => ({
-          value: valueObj.value,
-          timestamp: new Date(valueObj.time).toLocaleTimeString(), // Zaman bilgisini uygun formata dönüştür
-        }));
-      } else {
-        transformed[groupName] = []; // Eğer veri yoksa boş dizi ekle
-      }
-    });
-
-    return transformed;
-  };
-
-  // Grafikleri render etme fonksiyonu
-  const renderCharts = (data, title) => {
-    return groupNames.map((groupName) => {
-      const groupData = data[groupName] || [];
-
-      if (groupData.length === 0) return null;
-
-      const options = {
-        title: { text: `${groupName} ${title}` },
-        tooltip: { trigger: "axis" },
-        xAxis: { type: "category", data: groupData.map((d) => d.timestamp) },
-        yAxis: { type: "value" },
-        series: [
-          {
-            name: "Sıcaklık",
-            type: "line",
-            data: groupData.map((d) => d.value),
-            label: { show: true, position: "top", formatter: "{c}" },
-          },
-        ],
-      };
-
-      return (
-        <div key={groupName} style={{ marginBottom: "30px" }}>
-          <ReactEcharts
-            option={options}
-            style={{ height: "400px", width: "100%" }}
-          />
-        </div>
-      );
-    });
-  };
+    const interval = setInterval(fetchCurrentData, 300000);
+    fetchCurrentData();
+    return () => clearInterval(interval);
+  }, [user]);
 
   return (
-    <div className="App">
-      <h1>Fırın Sıcaklık Değerleri</h1>
-      {error ? <p>Error: {error}</p> : null}
-      <h2>Güncel Veriler</h2>
-      {renderCharts(currentData, "Güncel Sıcaklık Grafiği")}
-      <h2>Geçmiş Veriler</h2>
-      {renderCharts(historicalData, "Geçmiş Sıcaklık Grafiği")}
+    <div style={{ padding: "20px" }}>
+      {expandedChart ? (
+        <LineChart
+          backgroundColor={colors[expandedChart]}
+          yAxisData={chartData[expandedChart]}
+          leftYAxisName={calculateMinMax(chartData[expandedChart])}
+          rightYAxisName={expandedChart}
+          xAxisData={chartData.saat}
+          isXAxisShow={true}
+          onClick={() => setExpandedChart(expandedChart)}
+          isExpanded={true}
+          onClose={() => setExpandedChart(null)}
+        />
+      ) : (
+        Object.keys(chartData).map(
+          (key) =>
+            key !== "saat" && (
+              <LineChart
+                key={key}
+                backgroundColor={colors[key]} // Her grafik için özel arka plan rengi
+                yAxisData={chartData[key]}
+                leftYAxisName={calculateMinMax(chartData[key])}
+                rightYAxisName={key}
+                xAxisData={chartData.saat}
+                isXAxisShow={key === "GRS BACA"}
+                onClick={() => setExpandedChart(key)} // Tıklandığında ilgili grafiği genişletiyoruz
+              />
+            )
+        )
+      )}
     </div>
   );
 }
