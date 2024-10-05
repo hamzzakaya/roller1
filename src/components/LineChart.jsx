@@ -8,6 +8,9 @@ export default function LineChart({
   rightYAxisName,
   xAxisData,
   isXAxisShow = false,
+  onClick,
+  isExpanded = false,
+  onClose,
 }) {
   const minMax = leftYAxisName && leftYAxisName.split("-");
   const min = parseInt(minMax[0]);
@@ -20,9 +23,13 @@ export default function LineChart({
       axisPointer: {
         type: "cross",
       },
+      formatter: function (params) {
+        const date = params[0]?.name.split("-");
+        return `${date[0]} <br> ${date[1]} Sıcaklık: <b>${params[0].value}</b>`;
+      },
     },
     grid: {
-      height: 50,
+      height: isExpanded ? 250 : 50, // Eğer genişletilmişse yüksekliği arttırıyoruz
       backgroundColor: backgroundColor,
       show: true,
       top: 0,
@@ -36,7 +43,7 @@ export default function LineChart({
       },
     },
     legend: {
-      data: [rightYAxisName], // Legend name'i, series'deki name ile aynı yapın
+      data: ["Temperature"],
     },
     xAxis: [
       {
@@ -49,6 +56,7 @@ export default function LineChart({
         },
         axisLabel: {
           show: isXAxisShow,
+          formatter: (val) => val.split("-")[1],
         },
         splitLine: {
           show: false,
@@ -98,31 +106,50 @@ export default function LineChart({
     ],
     series: [
       {
-        name: rightYAxisName, // Series name'i buraya ekleyin
         type: "line",
         yAxisIndex: 0,
         data: yAxisData,
-        areaStyle: {}, // Burada alan stili uygulayabilirsiniz
-        smooth: true, // Grafiği yumuşatmak için
-        itemStyle: {
-          color: backgroundColor, // Grafiğin çizgi rengi
-          borderColor: backgroundColor,
-          borderWidth: 2,
-        },
-        lineStyle: {
-          width: 2,
-        },
-        areaStyle: {
-          color: backgroundColor, // Alanın rengi
-          opacity: 0.3, // Alanın opaklığı
-        },
       },
     ],
   };
+
   return (
-    <ReactEcharts
-      option={option}
-      style={{ height: isXAxisShow ? "150px" : "50px", width: "100%" }}
-    />
+    <div
+      style={{
+        position: "relative",
+        cursor: onClick ? "pointer" : "default",
+        width: "100%",
+      }}
+      onClick={onClick}
+    >
+      <ReactEcharts
+        option={option}
+        style={{
+          height: isExpanded ? "300px" : isXAxisShow ? "150px" : "50px",
+          width: "100%",
+        }}
+      />
+      {isExpanded && (
+        <button
+          style={{
+            position: "absolute",
+            top: 10,
+            right: 10,
+            backgroundColor: "#ff4d4f",
+            color: "#fff",
+            border: "none",
+            borderRadius: "5px",
+            padding: "5px 10px",
+            cursor: "pointer",
+          }}
+          onClick={(e) => {
+            e.stopPropagation(); // Butona tıklandığında grafiğin tıklama olayını tetiklememek için
+            onClose && onClose();
+          }}
+        >
+          Close
+        </button>
+      )}
+    </div>
   );
 }
