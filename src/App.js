@@ -95,7 +95,7 @@ function App() {
 
     const fetchCurrentData = async () => {
       const data = JSON.stringify({
-        collection: "tempV2",
+        collection: "tempV3",
         database: "temperature_data",
         dataSource: "Cluster0",
       });
