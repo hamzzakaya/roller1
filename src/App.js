@@ -2,7 +2,40 @@ import React, { useEffect, useState } from "react";
 import axios from "axios";
 import * as Realm from "realm-web";
 import LineChart from "./components/LineChart";
+import { saveAs } from "file-saver";
+import * as XLSX from "xlsx"; // Excel işlemleri için kütüphane
 
+// Excel verisi için formatlama fonksiyonu
+const prepareDataForExcel = (data) => {
+  const excelData = [];
+  const keys = Object.keys(data).filter((key) => key !== "saat");
+
+  // Saat bilgisi ve her grup için sıcaklık verisi
+  data.saat.forEach((time, index) => {
+    const row = { Time: time };
+    keys.forEach((key) => {
+      row[key] = data[key][index] || 0;
+    });
+    excelData.push(row);
+  });
+
+  return excelData;
+};
+
+// Excel dosyasını oluşturma ve indirme fonksiyonu
+const exportToExcel = (data) => {
+  const formattedData = prepareDataForExcel(data);
+  const worksheet = XLSX.utils.json_to_sheet(formattedData);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "Temperature Data");
+  const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const dataBlob = new Blob([excelBuffer], {
+    type: "application/octet-stream",
+  });
+  saveAs(dataBlob, "Temperature_Data.xlsx");
+};
+
+// Min-max hesaplama fonksiyonu
 const calculateMinMax = (arr) => {
   if (!Array.isArray(arr) || arr.length === 0) {
     return "N/A";
@@ -12,6 +45,7 @@ const calculateMinMax = (arr) => {
   return `${min}-${max}`;
 };
 
+// Unix timestamp'ı insan okunabilir tarihe çevirme fonksiyonu
 const timeStampToHumanDate = (timeStamp) => {
   const date = new Date(timeStamp);
   const hours = date.getHours();
@@ -24,6 +58,7 @@ const timeStampToHumanDate = (timeStamp) => {
   return formattedTime;
 };
 
+// Veriyi dönüştürme fonksiyonu
 const transformData = (data) => {
   const transformed = {};
   if (data.length) {
@@ -42,6 +77,9 @@ function App() {
   const [user, setUser] = useState(null);
   const [expandedChart, setExpandedChart] = useState(null);
   const [chartData, setChartData] = useState({});
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
   const colors = {
     A8: "#ff9f1c",
@@ -67,6 +105,7 @@ function App() {
   const mongoDBEndpoint =
     "https://eu-central-1.aws.data.mongodb-api.com/app/data-xnlepwl/endpoint/data/v1/action/";
 
+  // MongoDB'ye e-posta ve şifre ile giriş yapma fonksiyonu
   const loginEmailPassword = async (email, password) => {
     const app = new Realm.App({ id: appId });
     const credentials = Realm.Credentials.emailPassword(email, password);
@@ -94,47 +133,130 @@ function App() {
     if (!user) return;
 
     const fetchCurrentData = async () => {
-      const data = JSON.stringify({
-        collection: "tempV3",
-        database: "temperature_data",
-        dataSource: "Cluster0",
-      });
-
-      const config = {
-        method: "post",
-        url: `${mongoDBEndpoint}find`,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${user}`,
-        },
-        data: data,
-      };
-
+      setIsLoading(true);
       try {
-        const response = await axios(config);
-        const data = response.data.documents;
-        const sortedData = data.map((d) => {
-          const tmpData = {
-            ...d,
-            values: d.values.sort((a, b) => a.time - b.time),
-          };
-          return tmpData;
+        // 1. Tüm verileri getir ve başla
+        const dataRequest = JSON.stringify({
+          collection: "tempV3",
+          database: "temperature_data",
+          dataSource: "Cluster0",
         });
-        const transformedData = transformData(sortedData);
+
+        const config = {
+          method: "post",
+          url: `${mongoDBEndpoint}find`,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${user}`,
+          },
+          data: dataRequest,
+        };
+
+        const response = await axios(config);
+        const responseData = response.data.documents;
+
+        if (responseData.length === 0) {
+          setChartData({});
+          setIsLoading(false);
+          return;
+        }
+
+        // 2. Tüm verileri zaman sırasına göre sırala
+        const sortedData = responseData.map((d) => ({
+          ...d,
+          values: d.values.sort((a, b) => a.time - b.time),
+        }));
+
+        // 3. Başlangıç ve bitiş tarihine en yakın verileri bul
+        const filteredData = sortedData.map((d) => {
+          const values = d.values;
+          const firstIndex = values.findIndex(
+            (v) => v.time >= new Date(startDate).getTime()
+          );
+          const lastIndex =
+            values.findIndex((v) => v.time >= new Date(endDate).getTime()) - 1;
+
+          // Eğer başlangıç veya bitiş tarihine uygun değer bulunamazsa, tüm veriyi göster
+          if (firstIndex === -1 || lastIndex === -1) return d;
+
+          // Seçilen verileri geri döndür
+          return {
+            ...d,
+            values: values.slice(firstIndex, lastIndex + 1),
+          };
+        });
+
+        // 4. Verileri dönüştür ve grafiğe aktar
+        const transformedData = transformData(filteredData);
         setChartData(transformedData);
       } catch (error) {
-        console.error(error);
+        console.error("Data fetching error:", error);
+        setChartData({});
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    const interval = setInterval(fetchCurrentData, 300000);
     fetchCurrentData();
-    return () => clearInterval(interval);
-  }, [user]);
+  }, [user, startDate, endDate]);
 
   return (
     <div style={{ padding: "20px" }}>
-      {expandedChart ? (
+      <div style={{ marginBottom: "20px" }}>
+        <label>
+          Start Date & Time:
+          <input
+            type="datetime-local"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            style={{ marginLeft: "10px", marginRight: "20px" }}
+          />
+        </label>
+        <label>
+          End Date & Time:
+          <input
+            type="datetime-local"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            style={{ marginLeft: "10px" }}
+          />
+        </label>
+        <button
+          onClick={() => setStartDate("") || setEndDate("")}
+          style={{
+            marginLeft: "20px",
+            padding: "10px",
+            backgroundColor: "#007bff",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Clear Filter
+        </button>
+        {/* Excel'e veri indirme butonu */}
+        <button
+          onClick={() => exportToExcel(chartData)}
+          style={{
+            marginLeft: "20px",
+            padding: "10px",
+            backgroundColor: "#28a745",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Export Data to Excel
+        </button>
+      </div>
+
+      {isLoading ? (
+        <div style={{ textAlign: "center", fontSize: "18px" }}>Loading...</div>
+      ) : Object.keys(chartData).length === 0 ? (
+        <div style={{ textAlign: "center", fontSize: "18px" }}>
+          No data available for the selected date range.
+        </div>
+      ) : expandedChart ? (
         <LineChart
           backgroundColor={colors[expandedChart]}
           yAxisData={chartData[expandedChart]}
