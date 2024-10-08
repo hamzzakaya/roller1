@@ -1,16 +1,15 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import axios from "axios";
 import * as Realm from "realm-web";
 import LineChart from "./components/LineChart";
 import { saveAs } from "file-saver";
-import * as XLSX from "xlsx"; // Excel işlemleri için kütüphane
+import * as XLSX from "xlsx";
 
 // Excel verisi için formatlama fonksiyonu
 const prepareDataForExcel = (data) => {
   const excelData = [];
   const keys = Object.keys(data).filter((key) => key !== "saat");
 
-  // Saat bilgisi ve her grup için sıcaklık verisi
   data.saat.forEach((time, index) => {
     const row = { Time: time };
     keys.forEach((key) => {
@@ -113,6 +112,66 @@ function App() {
     return loggedUser.accessToken;
   };
 
+  // Veriyi çeken fonksiyonu useCallback ile sarmalıyoruz
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const dataRequest = JSON.stringify({
+        collection: "tempV3",
+        database: "temperature_data",
+        dataSource: "Cluster0",
+      });
+
+      const config = {
+        method: "post",
+        url: `${mongoDBEndpoint}find`,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user}`,
+        },
+        data: dataRequest,
+      };
+
+      const response = await axios(config);
+      const responseData = response.data.documents;
+
+      if (responseData.length === 0) {
+        setChartData({});
+        setIsLoading(false);
+        return;
+      }
+
+      const sortedData = responseData.map((d) => ({
+        ...d,
+        values: d.values.sort((a, b) => a.time - b.time),
+      }));
+
+      const filteredData = sortedData.map((d) => {
+        const values = d.values;
+        const firstIndex = values.findIndex(
+          (v) => v.time >= new Date(startDate).getTime()
+        );
+        const lastIndex =
+          values.findIndex((v) => v.time >= new Date(endDate).getTime()) - 1;
+
+        if (firstIndex === -1 || lastIndex === -1) return d;
+
+        return {
+          ...d,
+          values: values.slice(firstIndex, lastIndex + 1),
+        };
+      });
+
+      const transformedData = transformData(filteredData);
+      setChartData(transformedData);
+    } catch (error) {
+      console.error("Data fetching error:", error);
+      setChartData({});
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user, startDate, endDate]);
+
   useEffect(() => {
     const initializeUser = async () => {
       try {
@@ -132,73 +191,15 @@ function App() {
   useEffect(() => {
     if (!user) return;
 
-    const fetchCurrentData = async () => {
-      setIsLoading(true);
-      try {
-        // 1. Tüm verileri getir ve başla
-        const dataRequest = JSON.stringify({
-          collection: "tempV3",
-          database: "temperature_data",
-          dataSource: "Cluster0",
-        });
+    fetchData(); // İlk veri çekme işlemi
 
-        const config = {
-          method: "post",
-          url: `${mongoDBEndpoint}find`,
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${user}`,
-          },
-          data: dataRequest,
-        };
+    const intervalId = setInterval(() => {
+      fetchData(); // 5 dakikada bir veri güncelleme
+    }, 300000);
 
-        const response = await axios(config);
-        const responseData = response.data.documents;
-
-        if (responseData.length === 0) {
-          setChartData({});
-          setIsLoading(false);
-          return;
-        }
-
-        // 2. Tüm verileri zaman sırasına göre sırala
-        const sortedData = responseData.map((d) => ({
-          ...d,
-          values: d.values.sort((a, b) => a.time - b.time),
-        }));
-
-        // 3. Başlangıç ve bitiş tarihine en yakın verileri bul
-        const filteredData = sortedData.map((d) => {
-          const values = d.values;
-          const firstIndex = values.findIndex(
-            (v) => v.time >= new Date(startDate).getTime()
-          );
-          const lastIndex =
-            values.findIndex((v) => v.time >= new Date(endDate).getTime()) - 1;
-
-          // Eğer başlangıç veya bitiş tarihine uygun değer bulunamazsa, tüm veriyi göster
-          if (firstIndex === -1 || lastIndex === -1) return d;
-
-          // Seçilen verileri geri döndür
-          return {
-            ...d,
-            values: values.slice(firstIndex, lastIndex + 1),
-          };
-        });
-
-        // 4. Verileri dönüştür ve grafiğe aktar
-        const transformedData = transformData(filteredData);
-        setChartData(transformedData);
-      } catch (error) {
-        console.error("Data fetching error:", error);
-        setChartData({});
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchCurrentData();
-  }, [user, startDate, endDate]);
+    // Cleanup function to clear interval on component unmount
+    return () => clearInterval(intervalId);
+  }, [user, fetchData]);
 
   return (
     <div style={{ padding: "20px" }}>
