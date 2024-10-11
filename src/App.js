@@ -141,24 +141,36 @@ function App() {
         return;
       }
 
+      // Verileri zaman sırasına göre sıralama
       const sortedData = responseData.map((d) => ({
         ...d,
         values: d.values.sort((a, b) => a.time - b.time),
       }));
 
+      // Belirli bir tarih aralığı belirlenmişse bu aralığa göre veriyi filtrele
       const filteredData = sortedData.map((d) => {
         const values = d.values;
-        const firstIndex = values.findIndex(
-          (v) => v.time >= new Date(startDate).getTime()
-        );
-        const lastIndex =
-          values.findIndex((v) => v.time >= new Date(endDate).getTime()) - 1;
 
-        if (firstIndex === -1 || lastIndex === -1) return d;
+        // Eğer tarih ve saat aralıkları belirlendiyse verileri filtrele
+        if (startDate && endDate) {
+          const firstIndex = values.findIndex(
+            (v) => v.time >= new Date(startDate).getTime()
+          );
+          const lastIndex =
+            values.findIndex((v) => v.time >= new Date(endDate).getTime()) - 1;
 
+          if (firstIndex === -1 || lastIndex === -1) return d;
+
+          return {
+            ...d,
+            values: values.slice(firstIndex, lastIndex + 1),
+          };
+        }
+
+        // Tarih aralığı belirlenmemişse sadece son 110 veriyi al
         return {
           ...d,
-          values: values.slice(firstIndex, lastIndex + 1),
+          values: values.slice(-110), // Son 110 veriyi al
         };
       });
 
