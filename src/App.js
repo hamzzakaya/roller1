@@ -206,10 +206,10 @@ function App() {
     fetchData(); // İlk veri çekme işlemi
 
     const intervalId = setInterval(() => {
+      console.log("Interval triggered");
       fetchData(); // 5 dakikada bir veri güncelleme
     }, 300000);
 
-    // Cleanup function to clear interval on component unmount
     return () => clearInterval(intervalId);
   }, [user, fetchData]);
 
