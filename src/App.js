@@ -215,17 +215,26 @@ function App() {
 
   return (
     <div style={{ padding: "20px" }}>
-      <div style={{ marginBottom: "20px" }}>
-        <label>
+      {/* Üst Ortada Tarih ve Butonların Bulunduğu Alan */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center", // Ortaya hizalama
+          alignItems: "center", // Dikey ortalama
+          marginBottom: "30px", // Alt boşluk
+          flexWrap: "wrap",
+        }}
+      >
+        <label style={{ marginRight: "20px" }}>
           Start Date & Time:
           <input
             type="datetime-local"
             value={startDate}
             onChange={(e) => setStartDate(e.target.value)}
-            style={{ marginLeft: "10px", marginRight: "20px" }}
+            style={{ marginLeft: "10px" }}
           />
         </label>
-        <label>
+        <label style={{ marginRight: "20px" }}>
           End Date & Time:
           <input
             type="datetime-local"
@@ -243,6 +252,7 @@ function App() {
             color: "#fff",
             border: "none",
             cursor: "pointer",
+            marginRight: "20px",
           }}
         >
           Clear Filter
@@ -251,7 +261,6 @@ function App() {
         <button
           onClick={() => exportToExcel(chartData)}
           style={{
-            marginLeft: "20px",
             padding: "10px",
             backgroundColor: "#28a745",
             color: "#fff",
@@ -263,6 +272,7 @@ function App() {
         </button>
       </div>
 
+      {/* Diğer içerik */}
       {isLoading ? (
         <div style={{ textAlign: "center", fontSize: "18px" }}>Loading...</div>
       ) : Object.keys(chartData).length === 0 ? (
