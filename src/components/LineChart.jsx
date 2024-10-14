@@ -35,13 +35,6 @@ export default function LineChart({
       top: 0,
       bottom: 0,
     },
-    toolbox: {
-      feature: {
-        dataView: { show: true, readOnly: false },
-        restore: { show: true },
-        saveAsImage: { show: true },
-      },
-    },
     legend: {
       data: ["Temperature"],
     },

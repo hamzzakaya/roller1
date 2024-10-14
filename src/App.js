@@ -79,6 +79,7 @@ function App() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [dataLimit, setDataLimit] = useState(110); // Varsayılan veri limiti
 
   const colors = {
     A8: "#ff9f1c",
@@ -141,17 +142,14 @@ function App() {
         return;
       }
 
-      // Verileri zaman sırasına göre sıralama
       const sortedData = responseData.map((d) => ({
         ...d,
         values: d.values.sort((a, b) => a.time - b.time),
       }));
 
-      // Belirli bir tarih aralığı belirlenmişse bu aralığa göre veriyi filtrele
       const filteredData = sortedData.map((d) => {
         const values = d.values;
 
-        // Eğer tarih ve saat aralıkları belirlendiyse verileri filtrele
         if (startDate && endDate) {
           const firstIndex = values.findIndex(
             (v) => v.time >= new Date(startDate).getTime()
@@ -167,10 +165,14 @@ function App() {
           };
         }
 
-        // Tarih aralığı belirlenmemişse sadece son 110 veriyi al
+        // Veriyi dizinin sonundan alıp her zaman kesin bir sınır koyuyoruz
+        const limitedValues = values.slice(
+          Math.max(values.length - dataLimit, 0)
+        );
+
         return {
           ...d,
-          values: values.slice(-110), // Son 110 veriyi al
+          values: limitedValues,
         };
       });
 
@@ -182,7 +184,7 @@ function App() {
     } finally {
       setIsLoading(false);
     }
-  }, [user, startDate, endDate]);
+  }, [user, startDate, endDate, dataLimit]);
 
   useEffect(() => {
     const initializeUser = async () => {
@@ -215,6 +217,54 @@ function App() {
 
   return (
     <div style={{ padding: "20px" }}>
+      {/* Veri Limiti Butonları */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "center",
+          marginBottom: "20px",
+        }}
+      >
+        <button
+          onClick={() => setDataLimit(12)}
+          style={{
+            padding: "10px",
+            marginRight: "10px",
+            backgroundColor: "#6c757d",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Son 12 Veri
+        </button>
+        <button
+          onClick={() => setDataLimit(24)}
+          style={{
+            padding: "10px",
+            marginRight: "10px",
+            backgroundColor: "#17a2b8",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Son 24 Veri
+        </button>
+        <button
+          onClick={() => setDataLimit(100)}
+          style={{
+            padding: "10px",
+            backgroundColor: "#007bff",
+            color: "#fff",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          Son 100 Veri
+        </button>
+      </div>
+
       {/* Üst Ortada Tarih ve Butonların Bulunduğu Alan */}
       <div
         style={{
